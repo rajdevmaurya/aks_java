@@ -1,0 +1,55 @@
+trigger:
+- main
+resources:
+- repo: self
+variables:
+  tag: 'v1.0.0'  # Example of a static tag value
+  acrName: 'myprivateacr143217'  # Example of a static ACR name
+  repositoryName: 'ftp-app'  # Example of a static repository name
+  branchName: 'main'  # Example of a static branch name
+  resourceGroup: 'rg-devops'  # Static resource group name
+  aksClusterName: 'my-aks-cluster'  # Static AKS cluster name
+
+stages:
+- stage: Build_and_Push
+  jobs:
+  - job: Build_and_Push_Job
+    pool:
+      #vmImage: 'ubuntu-latest'  # Use an Azure-hosted agent
+      name: Default
+    steps:
+    - checkout: self
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'ServiceConnection_Automatic'  # Replace with your service connection name
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          # Authenticate with ACR and build & push the Docker image
+          az acr login --name $(acrName)
+          docker build -t $(acrName).azurecr.io/$(repositoryName)-$(branchName):$(tag) .
+          docker push $(acrName).azurecr.io/$(repositoryName)-$(branchName):$(tag)
+      displayName: 'Build and Push Docker Image'
+
+- stage: Deploy_to_AKS
+  jobs:
+  - deployment: Deploy_to_AKS_Job
+    environment: 'AKS_Environment'
+    pool:
+      #vmImage: 'ubuntu-latest'  # Use an Azure-hosted agent
+      name: Default
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: 'ServiceConnection_Automatic'  # Replace with your service connection name
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Authenticate with AKS and deploy
+                az aks get-credentials --resource-group $(resourceGroup) --name $(aksClusterName) --overwrite-existing
+                kubectl apply -f deployment.yaml
+            displayName: 'Deploy to AKS'
